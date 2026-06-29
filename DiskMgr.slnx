@@ -1,0 +1,7 @@
+<Solution>
+  <Configurations>
+    <Platform Name="x64" />
+    <Platform Name="x86" />
+  </Configurations>
+  <Project Path="DiskMgr.vcxproj" Id="51ce982e-1144-4a4f-8c62-928e6a3286c2" />
+</Solution>
