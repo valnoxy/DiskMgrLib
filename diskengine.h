@@ -46,6 +46,19 @@ extern "C" {
     __declspec(dllexport) int DiskMgr_GetPartitionCount(int diskNumber);
     __declspec(dllexport) unsigned long long DiskMgr_GetDiskSize(int diskNumber);
     
+    // VSS Snapshot Operations
+    __declspec(dllexport) HRESULT DiskMgr_CreateVssSnapshot(
+        const wchar_t* volumePath,
+        wchar_t* outSnapshotId,
+        int snapshotIdBufferSize,
+        wchar_t* outDeviceObjectPath,
+        int deviceObjectPathBufferSize
+    );
+    __declspec(dllexport) HRESULT DiskMgr_DeleteVssSnapshot(const wchar_t* snapshotId);
+
     // Error Handling
     __declspec(dllexport) const wchar_t* DiskMgr_GetLastError();
+
+    // Logging
+    __declspec(dllexport) void DiskMgr_SetSilentMode(bool silent);
 }
