@@ -61,4 +61,5 @@ extern "C" {
 
     // Logging
     __declspec(dllexport) void DiskMgr_SetSilentMode(bool silent);
+    __declspec(dllexport) void DiskMgr_SetLogCallback(void (__cdecl *callback)(int level, const wchar_t* message));
 }

@@ -1,4 +1,5 @@
 #include "pch.h"
+#include "logging.h"
 
 #include <cwctype>
 #include <windows.h>
@@ -22,17 +23,17 @@ extern "C" __declspec(dllexport) HRESULT DiskMgr_FormatPartition(
 {
     if (!fileSystem || wcslen(fileSystem) == 0)
     {
-        std::wcout << L"[DiskMgr] Invalid file system\n";
+        DISKMGR_LOG_ERROR(L"Invalid file system");
 	    return E_INVALIDARG;
     }
 
     driveLetter = std::towupper(driveLetter);
     if (driveLetter < L'A' || driveLetter > L'Z')
     {
-        std::wcout << L"[DiskMgr] Invalid device letter: " << driveLetter << "\n";
+        DISKMGR_LOG_ERROR(L"Invalid device letter: " << driveLetter);
         return E_INVALIDARG;
     }
-    std::wcout << L"[DiskMgr] Begin DiskMgr_FormatPartition for: " << driveLetter << "\n";
+    DISKMGR_LOG_DEBUG(L"Begin DiskMgr_FormatPartition for: " << driveLetter);
 
     HRESULT hResult;
     HRESULT asyncRes;
@@ -67,7 +68,7 @@ extern "C" __declspec(dllexport) HRESULT DiskMgr_FormatPartition(
     }
     else if (FAILED(hResult))
     {
-        std::wcout << L"[DiskMgr] Failed CoInitializeEx: " << hResult << "\n";
+        DISKMGR_LOG_ERROR(L"Failed CoInitializeEx: " << hResult);
         return hResult;
     }
 
@@ -76,7 +77,7 @@ extern "C" __declspec(dllexport) HRESULT DiskMgr_FormatPartition(
         IID_IVdsServiceLoader, (void**)&pLoader);
     if (FAILED(hResult))
     {
-        std::wcout << L"[DiskMgr] Failed CoCreateInstance: " << hResult << "\n";
+        DISKMGR_LOG_ERROR(L"Failed CoCreateInstance: " << hResult);
         goto cleanup;
     }
 
@@ -84,14 +85,14 @@ extern "C" __declspec(dllexport) HRESULT DiskMgr_FormatPartition(
     SafeRelease(pLoader);
     if (FAILED(hResult))
     {
-        std::wcout << L"[DiskMgr] Failed LoadService: " << hResult << "\n";
+        DISKMGR_LOG_ERROR(L"Failed LoadService: " << hResult);
         goto cleanup;
     }
 
     hResult = pService->WaitForServiceReady();
     if (FAILED(hResult))
     {
-        std::wcout << L"[DiskMgr] Failed WaitForServiceReady on pService: " << hResult << "\n";
+        DISKMGR_LOG_ERROR(L"Failed WaitForServiceReady on pService: " << hResult);
 	    goto cleanup;
     }
 
@@ -99,14 +100,14 @@ extern "C" __declspec(dllexport) HRESULT DiskMgr_FormatPartition(
     hResult = pService->Reenumerate();
     if (FAILED(hResult))
     {
-        std::wcout << L"[DiskMgr] Failed ReEnumerate: " << hResult << "\n";
+        DISKMGR_LOG_ERROR(L"Failed ReEnumerate: " << hResult);
 	    goto cleanup;
     }
 
     hResult = pService->Refresh();
     if (FAILED(hResult))
     {
-        std::wcout << L"[DiskMgr] Failed Refresh on pService: " << hResult << "\n"; 
+        DISKMGR_LOG_ERROR(L"Failed Refresh on pService: " << hResult);
     	goto cleanup;
     }
 
@@ -114,7 +115,7 @@ extern "C" __declspec(dllexport) HRESULT DiskMgr_FormatPartition(
     hResult = pService->QueryProviders(VDS_QUERY_SOFTWARE_PROVIDERS, &pEnumVdsSwProviders);
     if (FAILED(hResult))
     {
-        std::wcout << L"[DiskMgr] Failed QueryProviders: " << hResult << "\n";
+        DISKMGR_LOG_ERROR(L"Failed QueryProviders: " << hResult);
 	    goto cleanup;
     }
 
@@ -124,7 +125,7 @@ extern "C" __declspec(dllexport) HRESULT DiskMgr_FormatPartition(
         SafeRelease(pUnknown);
         if (FAILED(hResult))
         {
-            std::wcout << L"[DiskMgr] Failed QueryInterface -> &pProvider: " << hResult << "\n";
+            DISKMGR_LOG_ERROR(L"Failed QueryInterface -> &pProvider: " << hResult);
             continue;
         }
 
@@ -132,7 +133,7 @@ extern "C" __declspec(dllexport) HRESULT DiskMgr_FormatPartition(
         SafeRelease(pProvider);
         if (FAILED(hResult))
         {
-            std::wcout << L"[DiskMgr] Failed QueryPacks -> &pEnumVdsPacks: " << hResult << "\n";
+            DISKMGR_LOG_ERROR(L"Failed QueryPacks -> &pEnumVdsPacks: " << hResult);
             continue;
         }
 
@@ -142,7 +143,7 @@ extern "C" __declspec(dllexport) HRESULT DiskMgr_FormatPartition(
             SafeRelease(pUnknown);
             if (FAILED(hResult))
             {
-                std::wcout << L"[DiskMgr] Failed QueryInterface -> &pPack: " << hResult << "\n";
+                DISKMGR_LOG_ERROR(L"Failed QueryInterface -> &pPack: " << hResult);
                 continue;
             }
 
@@ -150,7 +151,7 @@ extern "C" __declspec(dllexport) HRESULT DiskMgr_FormatPartition(
             SafeRelease(pPack);
             if (FAILED(hResult))
             {
-                std::wcout << L"[DiskMgr] Failed QueryVolumes -> &pEnumVolumes: " << hResult << "\n";
+                DISKMGR_LOG_ERROR(L"Failed QueryVolumes -> &pEnumVolumes: " << hResult);
                 continue;
             }
 
@@ -160,7 +161,7 @@ extern "C" __declspec(dllexport) HRESULT DiskMgr_FormatPartition(
                 SafeRelease(pUnknown);
                 if (FAILED(hResult))
                 {
-                    std::wcout << L"[DiskMgr] Failed QueryInterface -> &pVolume: " << hResult << "\n";
+                    DISKMGR_LOG_ERROR(L"Failed QueryInterface -> &pVolume: " << hResult);
                     continue;
                 }
 
@@ -168,14 +169,14 @@ extern "C" __declspec(dllexport) HRESULT DiskMgr_FormatPartition(
                 SafeRelease(pVolume);
                 if (FAILED(hResult))
                 {
-                    std::wcout << L"[DiskMgr] Failed QueryInterface -> &pVolumeMF: " << hResult << "\n";
+                    DISKMGR_LOG_ERROR(L"Failed QueryInterface -> &pVolumeMF: " << hResult);
                     continue;
                 }
 
                 hResult = pVolumeMF->QueryAccessPaths(&accessPaths, (PLONG)&ulFetchCount);
                 if (FAILED(hResult))
                 {
-                    std::wcout << L"[DiskMgr] Failed QueryAccessPaths: " << hResult << "\n";
+                    DISKMGR_LOG_ERROR(L"Failed QueryAccessPaths: " << hResult);
                     SafeRelease(pVolumeMF);
                     continue;
                 }
@@ -199,7 +200,7 @@ extern "C" __declspec(dllexport) HRESULT DiskMgr_FormatPartition(
 
                 if (!foundVolume)
                 {
-                    //std::wcout << L"[DiskMgr] Volume not found!\n";
+                    //DISKMGR_LOG_ERROR(L"Volume not found!");
                     SafeRelease(pVolumeMF);
                     continue;
                 }
@@ -208,18 +209,18 @@ extern "C" __declspec(dllexport) HRESULT DiskMgr_FormatPartition(
                 SafeRelease(pVolumeMF);
                 if (FAILED(hResult))
                 {
-                    std::wcout << L"[DiskMgr] Failed QueryInterface -> &pVolumeMF2: " << hResult << "\n";
+                    DISKMGR_LOG_ERROR(L"Failed QueryInterface -> &pVolumeMF2: " << hResult);
 	                goto cleanup;
                 }
 
                 // prepare parameters
-                std::wcout << L"[DiskMgr] Preparing format parameters\n";
+                DISKMGR_LOG_DEBUG(L"Preparing format parameters");
                 wchar_t fsNameBuffer[32];
                 wchar_t fsLabelBuffer[32];
                 wcscpy_s(fsNameBuffer, fileSystem);
                 wcscpy_s(fsLabelBuffer, label ? label : L"");
 
-                std::wcout << L"[DiskMgr] Formatting partition ...\n";
+                DISKMGR_LOG_DEBUG(L"Formatting partition ...");
                 hResult = pVolumeMF2->FormatEx(
                     fsNameBuffer,                // File system
                     0,                           // Revision
@@ -233,7 +234,7 @@ extern "C" __declspec(dllexport) HRESULT DiskMgr_FormatPartition(
 
                 if (FAILED(hResult))
                 {
-                    std::wcout << L"[DiskMgr] Format failed: "<< hResult <<"\n";
+                    DISKMGR_LOG_ERROR(L"Format failed: "<< hResult);
                     SafeRelease(pVolumeMF2);
                     goto cleanup;
                 }
@@ -245,19 +246,19 @@ extern "C" __declspec(dllexport) HRESULT DiskMgr_FormatPartition(
 
                 if (FAILED(asyncRes))
                 {
-                    std::wcout << L"[DiskMgr] Format failed (asyncRes): " << hResult << "\n";
+                    DISKMGR_LOG_ERROR(L"Format failed (asyncRes): " << hResult);
                     hResult = asyncRes;
                     goto cleanup;
                 }
 
                 if (FAILED(hResult))
                 {
-                    std::wcout << L"[DiskMgr] Format failed (after async): " << hResult << "\n";
+                    DISKMGR_LOG_ERROR(L"Format failed (after async): " << hResult);
 					goto cleanup;
                 }
 
                 formatComplete = true;
-                std::wcout << L"[DiskMgr] Format completed! -> Result: " << hResult << "\n";
+                DISKMGR_LOG_INFO(L"Format completed! -> Result: " << hResult);
                 goto cleanup;
             }
 

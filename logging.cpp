@@ -1,43 +1,39 @@
 #include "pch.h"
 #include "logging.h"
 
+#include <atomic>
 #include <iostream>
+#include <mutex>
 
 namespace {
 
-    // Discards everything written to it; used to mute std::wcout / std::wcerr without
-    // touching every individual log call site across the library.
-    class NullWideBuffer : public std::wstreambuf {
-    protected:
-        int_type overflow(int_type c) override {
-            return c == traits_type::eof() ? traits_type::eof() : c;
-        }
-    };
-
-    NullWideBuffer g_nullBuffer;
-    std::wstreambuf* g_originalCoutBuf = nullptr;
-    std::wstreambuf* g_originalCerrBuf = nullptr;
+    std::atomic<DiskMgrLogCallback> g_logCallback{ nullptr };
+    std::atomic<bool> g_silent{ false };
+    std::mutex g_consoleMutex;
 
 }
 
 extern "C" __declspec(dllexport) void DiskMgr_SetSilentMode(bool silent)
 {
-    if (silent)
+    g_silent = silent;
+}
+
+extern "C" __declspec(dllexport) void DiskMgr_SetLogCallback(DiskMgrLogCallback callback)
+{
+    g_logCallback = callback;
+}
+
+void DiskMgr_Log(int level, const std::wstring& message)
+{
+    if (const auto callback = g_logCallback.load())
     {
-        if (!g_originalCoutBuf)
-        {
-            g_originalCoutBuf = std::wcout.rdbuf(&g_nullBuffer);
-            g_originalCerrBuf = std::wcerr.rdbuf(&g_nullBuffer);
-        }
+        callback(level, message.c_str());
+        return;
     }
-    else
-    {
-        if (g_originalCoutBuf)
-        {
-            std::wcout.rdbuf(g_originalCoutBuf);
-            std::wcerr.rdbuf(g_originalCerrBuf);
-            g_originalCoutBuf = nullptr;
-            g_originalCerrBuf = nullptr;
-        }
-    }
+
+    if (g_silent) return;
+
+    std::lock_guard<std::mutex> lock(g_consoleMutex);
+    auto& stream = level >= DISKMGR_LOG_LEVEL_ERROR ? std::wcerr : std::wcout;
+    stream << L"[DiskMgr] " << message << L"\n";
 }

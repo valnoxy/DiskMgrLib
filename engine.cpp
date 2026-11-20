@@ -7,6 +7,7 @@
 
 #include "pch.h"
 #include "diskengine.h"
+#include "logging.h"
 
 #include <iostream>
 #include <string>
@@ -15,9 +16,15 @@
 
 static std::wstring g_lastError;
 
+static constexpr LONGLONG PARTITION_ALIGNMENT = 1024 * 1024LL;
+
+static LONGLONG AlignUp(LONGLONG value, LONGLONG alignment) {
+    return (value + alignment - 1) / alignment * alignment;
+}
+
 void SetLastError(const std::wstring& error) {
     g_lastError = error;
-    std::wcerr << L"[DiskMgr] Error: " << error << L"\n";
+    DISKMGR_LOG_ERROR(error);
 }
 
 const wchar_t* DiskMgr_GetLastError() {
@@ -72,7 +79,7 @@ bool DiskMgr_CleanDisk(int diskNumber) {
         return false;
     }
 
-    std::wcout << L"[DiskMgr] Disk cleaned successfully\n";
+    DISKMGR_LOG_INFO(L"Disk cleaned successfully");
     return true;
 }
 
@@ -105,7 +112,7 @@ bool DiskMgr_InitializeMBR(int diskNumber) {
         return false;
     }
 
-    std::wcout << L"[DiskMgr] MBR initialized successfully\n";
+    DISKMGR_LOG_INFO(L"MBR initialized successfully");
     return true;
 }
 
@@ -159,22 +166,28 @@ bool DiskMgr_CreateMBRPartition(int diskNumber, unsigned long long sizeInMB, uns
     partitionInfo.RewritePartition = TRUE;
 
     // Calculate starting offset
-    if (validPartitions.empty()) {
-        partitionInfo.StartingOffset.QuadPart = 1024 * 1024LL;  // 1 MB offset
+    LONGLONG startOffset = PARTITION_ALIGNMENT;
+    for (const auto& part : validPartitions) {
+        const LONGLONG end = part.StartingOffset.QuadPart + part.PartitionLength.QuadPart;
+        if (end > startOffset) startOffset = end;
     }
-    else {
-        // Find the last partition
-        LONGLONG maxEnd = 0;
-        for (const auto& part : validPartitions) {
-            LONGLONG end = part.StartingOffset.QuadPart + part.PartitionLength.QuadPart;
-            if (end > maxEnd) {
-                maxEnd = end;
-            }
-        }
-        partitionInfo.StartingOffset.QuadPart = maxEnd + (1024 * 1024LL);
+    startOffset = AlignUp(startOffset, PARTITION_ALIGNMENT);
+
+    const LONGLONG length = static_cast<LONGLONG>(sizeInMB) * 1024 * 1024;
+    GET_LENGTH_INFORMATION lengthInfo = {};
+    if (DeviceIoControl(diskHandle, IOCTL_DISK_GET_LENGTH_INFO, nullptr, 0,
+        &lengthInfo, sizeof(lengthInfo), &bytesReturned, nullptr) &&
+        startOffset + length > lengthInfo.Length.QuadPart) {
+        const LONGLONG available = lengthInfo.Length.QuadPart > startOffset ? (lengthInfo.Length.QuadPart - startOffset) / (1024 * 1024) : 0;
+        SetLastError(L"Not enough space for MBR partition: requested " + std::to_wstring(sizeInMB) +
+            L" MB, available " + std::to_wstring(available) + L" MB");
+        delete[] layoutBuffer;
+        DiskMgr_CloseDisk(diskHandle);
+        return false;
     }
 
-    partitionInfo.PartitionLength.QuadPart = sizeInMB * 1024 * 1024;
+    partitionInfo.StartingOffset.QuadPart = startOffset;
+    partitionInfo.PartitionLength.QuadPart = length;
     partitionInfo.PartitionNumber = (DWORD)validPartitions.size() + 1;
 
     // Rebuild layout with valid partitions + new partition
@@ -213,7 +226,7 @@ bool DiskMgr_CreateMBRPartition(int diskNumber, unsigned long long sizeInMB, uns
     DeviceIoControl(diskHandle, IOCTL_DISK_UPDATE_PROPERTIES, nullptr, 0, nullptr, 0, &bytesReturned, nullptr);
     DiskMgr_CloseDisk(diskHandle);
 
-    std::wcout << L"[DiskMgr] MBR partition created successfully\n";
+    DISKMGR_LOG_INFO(L"MBR partition created successfully");
     return true;
 }
 
@@ -270,7 +283,7 @@ bool DiskMgr_SetMBRPartitionActive(int diskNumber, int partitionIndex) {
         return false;
     }
 
-    std::wcout << L"[DiskMgr] Partition set to active\n";
+    DISKMGR_LOG_INFO(L"Partition set to active");
     return true;
 }
 
@@ -308,7 +321,7 @@ bool DiskMgr_InitializeGPT(int diskNumber) {
         return false;
     }
 
-    std::wcout << L"[DiskMgr] GPT initialized successfully\n";
+    DISKMGR_LOG_INFO(L"GPT initialized successfully");
     return true;
 }
 
@@ -350,11 +363,26 @@ bool DiskMgr_CreateGPTPartition(int diskNumber, unsigned long long sizeInMB, GUI
     wcscpy_s(partitionInfo.Gpt.Name, L"");
 
     partitionInfo.StartingOffset.QuadPart = (layoutInfo->PartitionCount == 0)
-        ? 1024 * 1024LL  // 1 MB offset
-        : layoutInfo->PartitionEntry[layoutInfo->PartitionCount - 1].StartingOffset.QuadPart +
-          layoutInfo->PartitionEntry[layoutInfo->PartitionCount - 1].PartitionLength.QuadPart + (1024 * 1024LL);
+    LONGLONG startOffset = layoutInfo->Gpt.StartingUsableOffset.QuadPart;
+    for (DWORD i = 0; i < layoutInfo->PartitionCount; i++) {
+        const auto& part = layoutInfo->PartitionEntry[i];
+        const LONGLONG end = part.StartingOffset.QuadPart + part.PartitionLength.QuadPart;
+        if (end > startOffset) startOffset = end;
+    }
+    startOffset = AlignUp(startOffset, PARTITION_ALIGNMENT);
 
-    partitionInfo.PartitionLength.QuadPart = sizeInMB * 1024 * 1024;
+    const LONGLONG length = static_cast<LONGLONG>(sizeInMB) * 1024 * 1024;
+    const LONGLONG usableEnd = layoutInfo->Gpt.StartingUsableOffset.QuadPart + layoutInfo->Gpt.UsableLength.QuadPart;
+    if (layoutInfo->Gpt.UsableLength.QuadPart > 0 && startOffset + length > usableEnd) {
+        SetLastError(L"Not enough space for GPT partition: requested " + std::to_wstring(sizeInMB) +
+            L" MB, available " + std::to_wstring(usableEnd > startOffset ? (usableEnd - startOffset) / (1024 * 1024) : 0) + L" MB");
+        delete[] layoutBuffer;
+        DiskMgr_CloseDisk(diskHandle);
+        return false;
+    }
+
+    partitionInfo.StartingOffset.QuadPart = startOffset;
+    partitionInfo.PartitionLength.QuadPart = length;
     partitionInfo.PartitionNumber = layoutInfo->PartitionCount + 1;
 
     layoutInfo->PartitionEntry[layoutInfo->PartitionCount] = partitionInfo;
@@ -378,7 +406,7 @@ bool DiskMgr_CreateGPTPartition(int diskNumber, unsigned long long sizeInMB, GUI
         return false;
     }
 
-    std::wcout << L"[DiskMgr] GPT partition created successfully\n";
+    DISKMGR_LOG_INFO(L"GPT partition created successfully");
     return true;
 }
 
@@ -429,7 +457,7 @@ bool DiskMgr_SetGPTPartitionAttributes(int diskNumber, int partitionIndex, unsig
         return false;
     }
 
-    std::wcout << L"[DiskMgr] Partition attributes set successfully\n";
+    DISKMGR_LOG_INFO(L"Partition attributes set successfully");
     return true;
 }
 
@@ -649,7 +677,7 @@ volume_found:
             SendMessageTimeoutW(HWND_BROADCAST, WM_DEVICECHANGE, DBT_DEVICEARRIVAL, 0, 
                 SMTO_ABORTIFHUNG, 5000, nullptr);
             
-            std::wcout << L"[DiskMgr] Drive letter " << driveLetter << L": assigned successfully (via registry)\n";
+            DISKMGR_LOG_INFO(L"Drive letter " << driveLetter << L": assigned successfully (via registry)");
             return true;
         }
         
@@ -661,7 +689,7 @@ volume_found:
     SendMessageTimeoutW(HWND_BROADCAST, WM_DEVICECHANGE, DBT_DEVICEARRIVAL, 0, 
         SMTO_ABORTIFHUNG, 5000, nullptr);
 
-    std::wcout << L"[DiskMgr] Drive letter " << driveLetter << L": assigned successfully\n";
+    DISKMGR_LOG_INFO(L"Drive letter " << driveLetter << L": assigned successfully");
     return true;
 }
 
@@ -721,7 +749,7 @@ bool DiskMgr_ChangeGPTPartitionType(int diskNumber, int partitionIndex, GUID new
         return false;
     }
 
-    std::wcout << L"[DiskMgr] Partition type changed successfully\n";
+    DISKMGR_LOG_INFO(L"Partition type changed successfully");
     return true;
 }
 

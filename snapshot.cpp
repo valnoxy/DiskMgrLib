@@ -1,5 +1,6 @@
 #include "pch.h"
 #include "snapshot.h"
+#include "logging.h"
 
 #include <vss.h>
 #include <vswriter.h>
@@ -21,7 +22,7 @@ extern "C" __declspec(dllexport) HRESULT DiskMgr_CreateVssSnapshot(
 {
     if (!volumePath || wcslen(volumePath) == 0)
     {
-        std::wcout << L"[DiskMgr] Invalid volume path\n";
+        DISKMGR_LOG_ERROR(L"Invalid volume path");
         return E_INVALIDARG;
     }
 
@@ -34,7 +35,7 @@ extern "C" __declspec(dllexport) HRESULT DiskMgr_CreateVssSnapshot(
     ZeroMemory(&snapshotProp, sizeof(snapshotProp));
     bool snapshotCreated = false;
 
-    std::wcout << L"[DiskMgr] Begin DiskMgr_CreateVssSnapshot for: " << volumePath << "\n";
+    DISKMGR_LOG_DEBUG(L"Begin DiskMgr_CreateVssSnapshot for: " << volumePath);
 
     hResult = CoInitializeEx(NULL, COINIT_MULTITHREADED);
     if (hResult == RPC_E_CHANGED_MODE)
@@ -43,98 +44,98 @@ extern "C" __declspec(dllexport) HRESULT DiskMgr_CreateVssSnapshot(
     }
     else if (FAILED(hResult))
     {
-        std::wcout << L"[DiskMgr] Failed CoInitializeEx: " << hResult << "\n";
+        DISKMGR_LOG_ERROR(L"Failed CoInitializeEx: " << hResult);
         return hResult;
     }
 
     hResult = CreateVssBackupComponents(&pBackup);
     if (FAILED(hResult))
     {
-        std::wcout << L"[DiskMgr] Failed CreateVssBackupComponents: " << hResult << "\n";
+        DISKMGR_LOG_ERROR(L"Failed CreateVssBackupComponents: " << hResult);
         goto cleanup;
     }
 
     hResult = pBackup->InitializeForBackup();
     if (FAILED(hResult))
     {
-        std::wcout << L"[DiskMgr] Failed InitializeForBackup: " << hResult << "\n";
+        DISKMGR_LOG_ERROR(L"Failed InitializeForBackup: " << hResult);
         goto cleanup;
     }
 
     hResult = pBackup->SetContext(VSS_CTX_APP_ROLLBACK);
     if (FAILED(hResult))
     {
-        std::wcout << L"[DiskMgr] Failed SetContext: " << hResult << "\n";
+        DISKMGR_LOG_ERROR(L"Failed SetContext: " << hResult);
         goto cleanup;
     }
 
     hResult = pBackup->SetBackupState(false, false, VSS_BT_COPY, false);
     if (FAILED(hResult))
     {
-        std::wcout << L"[DiskMgr] Failed SetBackupState: " << hResult << "\n";
+        DISKMGR_LOG_ERROR(L"Failed SetBackupState: " << hResult);
         goto cleanup;
     }
 
     hResult = pBackup->GatherWriterMetadata(&pAsync);
     if (FAILED(hResult))
     {
-        std::wcout << L"[DiskMgr] Failed GatherWriterMetadata: " << hResult << "\n";
+        DISKMGR_LOG_ERROR(L"Failed GatherWriterMetadata: " << hResult);
         goto cleanup;
     }
     hResult = pAsync->Wait();
     SafeRelease(pAsync);
     if (FAILED(hResult))
     {
-        std::wcout << L"[DiskMgr] Failed GatherWriterMetadata (Wait): " << hResult << "\n";
+        DISKMGR_LOG_ERROR(L"Failed GatherWriterMetadata (Wait): " << hResult);
         goto cleanup;
     }
 
     hResult = pBackup->StartSnapshotSet(&snapshotSetId);
     if (FAILED(hResult))
     {
-        std::wcout << L"[DiskMgr] Failed StartSnapshotSet: " << hResult << "\n";
+        DISKMGR_LOG_ERROR(L"Failed StartSnapshotSet: " << hResult);
         goto cleanup;
     }
 
     hResult = pBackup->AddToSnapshotSet((VSS_PWSZ)volumePath, GUID_NULL, &snapshotId);
     if (FAILED(hResult))
     {
-        std::wcout << L"[DiskMgr] Failed AddToSnapshotSet: " << hResult << "\n";
+        DISKMGR_LOG_ERROR(L"Failed AddToSnapshotSet: " << hResult);
         goto cleanup;
     }
 
     hResult = pBackup->PrepareForBackup(&pAsync);
     if (FAILED(hResult))
     {
-        std::wcout << L"[DiskMgr] Failed PrepareForBackup: " << hResult << "\n";
+        DISKMGR_LOG_ERROR(L"Failed PrepareForBackup: " << hResult);
         goto cleanup;
     }
     hResult = pAsync->Wait();
     SafeRelease(pAsync);
     if (FAILED(hResult))
     {
-        std::wcout << L"[DiskMgr] Failed PrepareForBackup (Wait): " << hResult << "\n";
+        DISKMGR_LOG_ERROR(L"Failed PrepareForBackup (Wait): " << hResult);
         goto cleanup;
     }
 
     hResult = pBackup->DoSnapshotSet(&pAsync);
     if (FAILED(hResult))
     {
-        std::wcout << L"[DiskMgr] Failed DoSnapshotSet: " << hResult << "\n";
+        DISKMGR_LOG_ERROR(L"Failed DoSnapshotSet: " << hResult);
         goto cleanup;
     }
     hResult = pAsync->Wait();
     SafeRelease(pAsync);
     if (FAILED(hResult))
     {
-        std::wcout << L"[DiskMgr] Failed DoSnapshotSet (Wait): " << hResult << "\n";
+        DISKMGR_LOG_ERROR(L"Failed DoSnapshotSet (Wait): " << hResult);
         goto cleanup;
     }
 
     hResult = pBackup->GetSnapshotProperties(snapshotId, &snapshotProp);
     if (FAILED(hResult))
     {
-        std::wcout << L"[DiskMgr] Failed GetSnapshotProperties: " << hResult << "\n";
+        DISKMGR_LOG_ERROR(L"Failed GetSnapshotProperties: " << hResult);
         goto cleanup;
     }
 
@@ -154,7 +155,7 @@ extern "C" __declspec(dllexport) HRESULT DiskMgr_CreateVssSnapshot(
 
     VssFreeSnapshotProperties(&snapshotProp);
     snapshotCreated = true;
-    std::wcout << L"[DiskMgr] VSS snapshot created successfully\n";
+    DISKMGR_LOG_INFO(L"VSS snapshot created successfully");
 
 cleanup:
     SafeRelease(pAsync);
@@ -171,11 +172,11 @@ extern "C" __declspec(dllexport) HRESULT DiskMgr_DeleteVssSnapshot(const wchar_t
 {
     if (!snapshotId || wcslen(snapshotId) == 0)
     {
-        std::wcout << L"[DiskMgr] Invalid snapshot id\n";
+        DISKMGR_LOG_ERROR(L"Invalid snapshot id");
         return E_INVALIDARG;
     }
 
-    std::wcout << L"[DiskMgr] Begin DiskMgr_DeleteVssSnapshot for: " << snapshotId << "\n";
+    DISKMGR_LOG_DEBUG(L"Begin DiskMgr_DeleteVssSnapshot for: " << snapshotId);
 
     HRESULT hResult;
     IVssBackupComponents* pBackup = NULL;
@@ -186,7 +187,7 @@ extern "C" __declspec(dllexport) HRESULT DiskMgr_DeleteVssSnapshot(const wchar_t
     hResult = CLSIDFromString(snapshotId, &id);
     if (FAILED(hResult))
     {
-        std::wcout << L"[DiskMgr] Failed to parse snapshot id: " << hResult << "\n";
+        DISKMGR_LOG_ERROR(L"Failed to parse snapshot id: " << hResult);
         return hResult;
     }
 
@@ -197,46 +198,46 @@ extern "C" __declspec(dllexport) HRESULT DiskMgr_DeleteVssSnapshot(const wchar_t
     }
     else if (FAILED(hResult))
     {
-        std::wcout << L"[DiskMgr] Failed CoInitializeEx: " << hResult << "\n";
+        DISKMGR_LOG_ERROR(L"Failed CoInitializeEx: " << hResult);
         return hResult;
     }
 
     hResult = CreateVssBackupComponents(&pBackup);
     if (FAILED(hResult))
     {
-        std::wcout << L"[DiskMgr] Failed CreateVssBackupComponents: " << hResult << "\n";
+        DISKMGR_LOG_ERROR(L"Failed CreateVssBackupComponents: " << hResult);
         goto cleanup;
     }
 
     hResult = pBackup->InitializeForBackup();
     if (FAILED(hResult))
     {
-        std::wcout << L"[DiskMgr] Failed InitializeForBackup: " << hResult << "\n";
+        DISKMGR_LOG_ERROR(L"Failed InitializeForBackup: " << hResult);
         goto cleanup;
     }
 
     hResult = pBackup->SetContext(VSS_CTX_APP_ROLLBACK);
     if (FAILED(hResult))
     {
-        std::wcout << L"[DiskMgr] Failed SetContext: " << hResult << "\n";
+        DISKMGR_LOG_ERROR(L"Failed SetContext: " << hResult);
         goto cleanup;
     }
 
     hResult = pBackup->DeleteSnapshots(id, VSS_OBJECT_SNAPSHOT, FALSE, &deletedCount, &nonDeletedId);
     if (FAILED(hResult))
     {
-        std::wcout << L"[DiskMgr] Failed DeleteSnapshots: " << hResult << "\n";
+        DISKMGR_LOG_ERROR(L"Failed DeleteSnapshots: " << hResult);
         goto cleanup;
     }
 
     if (deletedCount < 1)
     {
-        std::wcout << L"[DiskMgr] Snapshot not found\n";
+        DISKMGR_LOG_ERROR(L"Snapshot not found");
         hResult = VSS_E_OBJECT_NOT_FOUND;
         goto cleanup;
     }
 
-    std::wcout << L"[DiskMgr] VSS snapshot deleted successfully\n";
+    DISKMGR_LOG_INFO(L"VSS snapshot deleted successfully");
 
 cleanup:
     SafeRelease(pBackup);
