@@ -362,7 +362,7 @@ bool DiskMgr_CreateGPTPartition(int diskNumber, unsigned long long sizeInMB, GUI
     partitionInfo.Gpt.Attributes = 0;
     wcscpy_s(partitionInfo.Gpt.Name, L"");
 
-    partitionInfo.StartingOffset.QuadPart = (layoutInfo->PartitionCount == 0)
+    // Calculate starting offset
     LONGLONG startOffset = layoutInfo->Gpt.StartingUsableOffset.QuadPart;
     for (DWORD i = 0; i < layoutInfo->PartitionCount; i++) {
         const auto& part = layoutInfo->PartitionEntry[i];
